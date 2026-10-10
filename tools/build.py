@@ -72,6 +72,21 @@ def static_glib(env):
     if "-lglib-2.0" not in shlex.split(query("--libs")):
         raise SystemExit("unexpected GLib package metadata")
     metadata.mkdir(exist_ok=True)
+
+    def query_package(*args):
+        return subprocess.check_output([pkgconfig, *args], env=env, text=True).strip()
+    # Homebrew now supplies zlib through zlib-ng-compat; pin its static
+    # archive alongside the GLib overrides so no dylib remains at runtime.
+    libdir = Path(query_package("--variable=libdir", "zlib"))
+    zlib_archive = libdir / "libz.a"
+    if not zlib_archive.is_file():
+        raise SystemExit(f"standalone build needs the static archive for zlib: {zlib_archive}")
+    zlib_package = metadata / "zlib.pc"
+    zlib_previous = zlib_package.read_text() if zlib_package.exists() else None
+    integrate.write_changed(zlib_package,
+        "Name: zlib (FM-1 standalone)\nDescription: Statically linked zlib\n"
+        f"Version: {query_package('--modversion', 'zlib')}\n"
+        f"Libs: {zlib_archive}\n")
     package = metadata / "glib-2.0.pc"
     previous = package.read_text() if package.exists() else None
     integrate.write_changed(package,
@@ -79,7 +94,7 @@ def static_glib(env):
         f"Version: {query('--modversion')}\nLibs: {shlex.join(libs)}\n"
         f"Cflags: {query('--cflags')}\n")
     env["PKG_CONFIG_PATH"] = os.pathsep.join([str(metadata), env.get("PKG_CONFIG_PATH", "")])
-    return previous != package.read_text()
+    return previous != package.read_text() or zlib_previous != zlib_package.read_text()
 
 
 def publish_executable(build):
