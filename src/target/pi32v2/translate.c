@@ -369,12 +369,16 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
     if ((op & 0xfff0) == 0xffc0 || (op & 0xfff0) == 0xffe0) {
         uint32_t value = fetch(d, here + 2) | ((uint32_t)fetch(d, here + 4) << 16);
         unsigned reg = op & 15;
-        if ((op & 0xfff0) == 0xffe0 && reg != SP && reg != SSP && reg != USP && reg != RETI) {
+        if ((op & 0xfff0) == 0xffe0 && reg != SP && reg != SSP && reg != USP &&
+            reg != RETI && reg != ICFG) {
             goto illegal;
         }
         tcg_gen_movi_i32((op & 0x20) ? spr[reg] : gpr[reg], value);
         if ((op & 0x20) && reg == SP) { check_stack(d); }
         next = here + 6;
+        /* Melodee's dual-core startup seeds ICFG with a literal; writing it
+         * can make an already asserted IRQ deliverable, as with E064. */
+        if ((op & 0xfff0) == 0xffe0 && reg == ICFG) { db->is_jmp = DISAS_EXIT; }
     } else if (op == 0xe040 || (op & 0xfff0) == 0xe040) {
         /* Vendor disassembly (E04A FFFF -> r10 = -1) and the external
          * oracle agree on sign extension; SLEIGH's movz label conflicts. */
@@ -602,15 +606,22 @@ static uint32_t decode_operation(PiDisasContext *d, uint32_t here, uint16_t op)
         next = here + 4;
     } else if (op == 0xe1fc) {
         uint16_t x = fetch(d, here + 2);
-        unsigned pair = x >> 12;
-        /* rD+1_rD += rA * rB (u). Measured on an FM-1: C is the 64-bit carry
-         * out; V, Z and N are unchanged. Only the unsigned form occurs. */
-        if ((x & 15) || (pair & 1)) { goto illegal; }
+        unsigned pair = (x >> 13) * 2;
+        /* rD+1_rD += rA * rB, signed when the extension's bit 12 is set.
+         * Measured on an FM-1 (unsigned): C is the 64-bit carry out; V, Z
+         * and N are unchanged. Vendor E1FC DA30 is r13_r12 += r3 * r10 (s)
+         * and E1FC 02F0 is r1_r0 += r15 * r2 (u). */
+        if (x & 15) { goto illegal; }
         TCGv_i64 sum = tcg_temp_new_i64(), product = tcg_temp_new_i64();
         TCGv_i64 left = tcg_temp_new_i64(), right = tcg_temp_new_i64();
         TCGv_i32 carry = tcg_temp_new_i32();
-        tcg_gen_extu_i32_i64(left, read_gpr(d, (x >> 4) & 15));
-        tcg_gen_extu_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        if (x & 0x1000) {
+            tcg_gen_ext_i32_i64(left, read_gpr(d, (x >> 4) & 15));
+            tcg_gen_ext_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        } else {
+            tcg_gen_extu_i32_i64(left, read_gpr(d, (x >> 4) & 15));
+            tcg_gen_extu_i32_i64(right, read_gpr(d, (x >> 8) & 15));
+        }
         tcg_gen_mul_i64(product, left, right);
         tcg_gen_concat_i32_i64(left, read_gpr(d, pair), read_gpr(d, pair + 1));
         tcg_gen_add_i64(sum, left, product);
@@ -1756,6 +1767,10 @@ static int parallel_writes(PiDisasContext *d, uint32_t here, uint16_t op)
     if (op == 0xe1f8) {
         uint16_t x = fetch(d, here + 2);
         return x & 15 ? -1 : 3u << ((x >> 13) * 2);
+    }
+    if (op == 0xe1fc) {
+        uint16_t x = fetch(d, here + 2);
+        return (x & 15) ? -1 : 3u << ((x >> 13) * 2);
     }
     if (op == 0xe1d0) {
         uint16_t x = fetch(d, here + 2);
