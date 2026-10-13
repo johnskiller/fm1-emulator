@@ -6,6 +6,10 @@
 #include "fm1-syscon.h"
 
 static const uint64_t masks[FM1_SYSCON_WORD_COUNT] = {
+    /* Melodee's optional downclock writes the RC16M enable and the SYS
+     * source gate; the modeled clock never changes, so the stored value
+     * starts at zero and its guard takes the no-change path. */
+    [FM1_SYSCON_CLK_CON0] = 0x102,
     /* USB uses bits 0..1; UART independently selects bits 10..11. */
     [FM1_SYSCON_CLK_CON1] = 0xc03,
     [FM1_SYSCON_CLK_CON2] = 0xf00,
@@ -13,17 +17,20 @@ static const uint64_t masks[FM1_SYSCON_WORD_COUNT] = {
 };
 
 static const char *const region_names[FM1_SYSCON_WORD_COUNT] = {
+    [FM1_SYSCON_CLK_CON0] = "fm1.clk-con0",
     [FM1_SYSCON_CLK_CON1] = "fm1.usb-clock",
     [FM1_SYSCON_CLK_CON2] = "fm1.alnk-clock",
     [FM1_SYSCON_IOMAP_CON5] = "fm1.alnk-routing",
 };
 
 static const char *const read_errors[FM1_SYSCON_WORD_COUNT] = {
+    [FM1_SYSCON_CLK_CON0] = "unsupported CLK_CON0 read or width",
     [FM1_SYSCON_CLK_CON2] = "unsupported ALNK0 clock read or width",
     [FM1_SYSCON_IOMAP_CON5] = "unsupported ALNK0 routing read or width",
 };
 
 static const char *const write_errors[FM1_SYSCON_WORD_COUNT] = {
+    [FM1_SYSCON_CLK_CON0] = "unsupported CLK_CON0 clock selector fields",
     [FM1_SYSCON_CLK_CON1] = "unsupported USB clock selector fields",
     [FM1_SYSCON_CLK_CON2] = "unsupported ALNK0 clock configuration",
     [FM1_SYSCON_IOMAP_CON5] = "unsupported ALNK0 pin routing configuration",
@@ -71,11 +78,13 @@ static const MemoryRegionOps name##_ops = { \
     .valid = {.min_access_size = 4, .max_access_size = 4}, \
     .impl = {.min_access_size = 4, .max_access_size = 4}, \
 }
+WORD_OPS(clk_con0, FM1_SYSCON_CLK_CON0);
 WORD_OPS(clk_con1, FM1_SYSCON_CLK_CON1);
 WORD_OPS(clk_con2, FM1_SYSCON_CLK_CON2);
 WORD_OPS(iomap_con5, FM1_SYSCON_IOMAP_CON5);
 
 static const MemoryRegionOps *const word_ops[FM1_SYSCON_WORD_COUNT] = {
+    [FM1_SYSCON_CLK_CON0] = &clk_con0_ops,
     [FM1_SYSCON_CLK_CON1] = &clk_con1_ops,
     [FM1_SYSCON_CLK_CON2] = &clk_con2_ops,
     [FM1_SYSCON_IOMAP_CON5] = &iomap_con5_ops,

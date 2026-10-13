@@ -16,6 +16,7 @@
 #include "fm1-input.h"
 #include "fm1-uart.h"
 #include "fm1-crc.h"
+#include "fm1-mcpwm.h"
 #include "fm1-ttmr.h"
 #include "fm1-lrct.h"
 
@@ -71,6 +72,7 @@ struct FM1PocState {
     FM1PocInput input;
     FM1PocUART uart;
     FM1PocCRC crc;
+    FM1PocMcpwm mcpwm;
     FM1PocTTMR ttmr;
     FM1PocTTMR ttmr1;
     FM1PocLRCT lrct;

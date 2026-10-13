@@ -461,7 +461,9 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
     /* Reached UART pin selections are independent of NOR/LCD routing.
      * The UART receiver has no external input; no GPIO edge becomes a byte. */
     if (offset == 8 || offset == 12) {
-        uint64_t mask = offset == 8 ? 0x3f00 : 0xf0;
+        /* CON3's high word routes MCPWM3's H/L outputs (Melodee's LED
+         * matrix; 0xBAD marks the disabled channels). */
+        uint64_t mask = offset == 8 ? 0x3f00 : 0xf0 | 0xfff00000ull;
         if (value & ~mask) {
             pi32v2_fail(&m->cpu->env, "unsupported UART IOMAP routing");
         }
@@ -470,8 +472,10 @@ static void iomap_write(void *opaque, hwaddr offset, uint64_t value, unsigned si
         return;
     }
     /* Bit 4 routes SPI1 to the LCD. Bit 17 routes SPI2 to port C
-     * (SDK spi.h): CLK PA3, DO PA4, DI PA2, the 74HC595 chain's pins. */
-    if (value & ~0x20010ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON1 routing"); }
+     * (SDK spi.h): CLK PA3, DO PA4, DI PA2, the 74HC595 chain's pins.
+     * Bits 10/11 route MCPWM1's H/L outputs (Melodee's LED matrix; no
+     * modeled output consumes them). */
+    if (value & ~0x20c10ull) { pi32v2_fail(&m->cpu->env, "unsupported IOMAP_CON1 routing"); }
     m->iomap_con1 = value;
     fm1_lcd_set_pins(&m->lcd, m->gpio[2][0], m->iomap_con1, m->gpio[0][0]);
 }
@@ -878,6 +882,7 @@ static void machine_init(MachineState *ms)
     }
     fm1_system_init(&m->system, OBJECT(m), m->cpu);
     fm1_syscon_init(&m->syscon, OBJECT(m), m->cpu);
+    fm1_sfr_map(0x1000c, &m->syscon.mmio[FM1_SYSCON_CLK_CON0]);
     fm1_sfr_map(0x10010, &m->syscon.mmio[FM1_SYSCON_CLK_CON1]);
     fm1_sfr_map(0x10014, &m->syscon.mmio[FM1_SYSCON_CLK_CON2]);
     fm1_sfr_map(0x51030, &m->syscon.mmio[FM1_SYSCON_IOMAP_CON5]);
@@ -899,6 +904,7 @@ static void machine_init(MachineState *ms)
     fm1_sfr_map(0x13100, sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->adc), 0));
     fm1_usb_init(&m->usb, OBJECT(m), m->cpu);
     fm1_uart_init(&m->uart, OBJECT(m), m->cpu, &m->syscon, device_irq, m);
+    fm1_mcpwm_init(&m->mcpwm, OBJECT(m));
     fm1_crc_init(&m->crc, OBJECT(m), m->cpu);
     fm1_ttmr_init(&m->ttmr, OBJECT(m), m->cpu, device_irq, m);
     fm1_lrct_init(&m->lrct, OBJECT(m), &m->system, device_irq, m);

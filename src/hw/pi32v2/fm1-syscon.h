@@ -5,9 +5,10 @@
 #include "system/memory.h"
 #include "cpu.h"
 
-/* Private ownership of the three already implemented shared words. Rates,
- * reset and additional clock/pinmux registers are outside this component. */
+/* Private ownership of the shared clock and routing words. Rates, reset
+ * and additional clock/pinmux registers are outside this component. */
 typedef enum FM1SysconWord {
+    FM1_SYSCON_CLK_CON0,
     FM1_SYSCON_CLK_CON1,
     FM1_SYSCON_CLK_CON2,
     FM1_SYSCON_IOMAP_CON5,
@@ -25,8 +26,9 @@ typedef struct FM1PocSyscon {
     void *validator_opaque[FM1_SYSCON_WORD_COUNT];
 } FM1PocSyscon;
 
-/* Initialize regions only; SoC composition maps them at 0x10010, 0x10014
- * and 0x51030 respectively. No additional addresses become available. */
+/* Initialize regions only; SoC composition maps them at 0x1000c, 0x10010,
+ * 0x10014 and 0x51030 respectively. No additional addresses become
+ * available. */
 void fm1_syscon_init(FM1PocSyscon *syscon, Object *owner, Pi32v2CPU *cpu);
 uint32_t fm1_syscon_get(const FM1PocSyscon *syscon, FM1SysconWord word);
 /* Validators may reject a write before canonical state changes. They must
